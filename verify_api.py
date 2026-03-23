@@ -1,7 +1,7 @@
 import requests
 import json
 
-url = "http://localhost:8000/api/goals"
+url = "http://127.0.0.1:8000/api/goals"
 payload = {
     "title": "Launch a successful Podcast",
     "description": "I want to start a tech podcast. I have no equipment.",

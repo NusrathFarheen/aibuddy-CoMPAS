@@ -1,8 +1,51 @@
+# Python
 .venv/
-.env
+.env/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database
+planner.db
+chroma_db/
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+lib/generated_plugin_registrant.dart
+android/local.properties
+android/key.properties
+android/app/src/main/res/raw/
+*.log
+*.symbols
+
+# OS
 .DS_Store
 .vscode/
 .idea/
-planner.db
+Thumbs.db
