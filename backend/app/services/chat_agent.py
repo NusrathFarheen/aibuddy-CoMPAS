@@ -11,7 +11,9 @@ from .memory import search_memory, store_memory
 _client = None
 
 
-def _get_client():
+def _get_client(api_key: str = None):
+    if api_key:
+        return Groq(api_key=api_key)
     global _client
     if _client is None:
         _client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -82,7 +84,7 @@ def chat(message: str, goal_id: int = None, system_instruction: str = None, api_
 
     # 5. Call Groq
     try:
-        client = Groq(api_key=api_key) if api_key else _get_client()
+        client = _get_client(api_key=api_key)
         response = client.chat.completions.create(
             messages=messages,
             model="llama-3.3-70b-versatile",
