@@ -18,18 +18,16 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.29.0' # Use a specific stable version
           
       - name: Install dependencies
         run: |
           cd mobile_app
-          flutter clean
           flutter pub get
           
       - name: Build Web
         run: |
           cd mobile_app
-          flutter build web --release --base-href "/aibuddy-CoMPAS/"
+          flutter build web --release --base-href "/aibuddy-CoMPAS/" --web-renderer auto
           
       - name: Deploy to GH Pages
         uses: peaceiris/actions-gh-pages@v3
