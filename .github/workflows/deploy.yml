@@ -18,10 +18,12 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.29.0' # Use a specific stable version
           
       - name: Install dependencies
         run: |
           cd mobile_app
+          flutter clean
           flutter pub get
           
       - name: Build Web
@@ -34,3 +36,4 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./mobile_app/build/web
+          force_orphan: true
