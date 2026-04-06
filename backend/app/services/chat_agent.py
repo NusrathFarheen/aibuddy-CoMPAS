@@ -32,7 +32,7 @@ If relevant memories or context is provided, weave them naturally into your resp
 You have access to the user's goals, habits, and journal data through the system."""
 
 
-def chat(message: str, goal_id: int = None, system_instruction: str = None):
+def chat(message: str, goal_id: int = None, system_instruction: str = None, api_key: str = None):
     """
     Process a chat message with RAG context.
     
@@ -82,7 +82,7 @@ def chat(message: str, goal_id: int = None, system_instruction: str = None):
 
     # 5. Call Groq
     try:
-        client = _get_client()
+        client = Groq(api_key=api_key) if api_key else _get_client()
         response = client.chat.completions.create(
             messages=messages,
             model="llama-3.3-70b-versatile",

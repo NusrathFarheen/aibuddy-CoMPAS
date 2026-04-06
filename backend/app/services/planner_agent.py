@@ -31,9 +31,9 @@ IMPORTANT: Respond ONLY with a JSON array of task descriptions. No markdown, no 
 Example: ["Research Flutter basics", "Set up development environment", "Build first widget"]"""
 
 
-def generate_plan(goal_id: int, title: str, description: str = "", template_id: str = "daily"):
+def generate_plan(goal_id: int, title: str, description: str = "", template_id: str = "daily", user_id: int = None, api_key: str = None):
     """
-    Generate an AI plan for a goal and save tasks to the database.
+    Generate an AI plan for a goal and save tasks to the database for a specific user.
     """
     context_hint = f"This goal uses the '{template_id}' template."
     
@@ -43,10 +43,7 @@ def generate_plan(goal_id: int, title: str, description: str = "", template_id: 
     prompt += "\n\nBreak this into 5-8 actionable steps suitable for this context."
 
     try:
-        client = _get_client()
-        # Ensure we have a valid key
-        if not os.getenv("GROQ_API_KEY"):
-             raise Exception("Missing Groq API Key")
+        client = Groq(api_key=api_key) if api_key else _get_client()
              
         response = client.chat.completions.create(
             messages=[
@@ -85,12 +82,13 @@ def generate_plan(goal_id: int, title: str, description: str = "", template_id: 
     with get_db() as conn:
         for desc in tasks_list:
             cursor = conn.execute(
-                "INSERT INTO tasks (goal_id, description, status) VALUES (?, ?, 'todo')",
-                (goal_id, str(desc)),
+                "INSERT INTO tasks (goal_id, user_id, description, status) VALUES (?, ?, ?, 'todo')",
+                (goal_id, user_id, str(desc)),
             )
             created_tasks.append({
                 "id": cursor.lastrowid,
                 "goal_id": goal_id,
+                "user_id": user_id,
                 "description": str(desc),
                 "is_completed": False,
                 "status": "todo",

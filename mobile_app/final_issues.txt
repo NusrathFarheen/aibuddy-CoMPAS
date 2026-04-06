@@ -1,0 +1,20 @@
+﻿Analyzing mobile_app...                                         
+
+   info - Statements in an if should be enclosed in a block - lib\models\workspace_template.dart:327:32 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\models\workspace_template.dart:330:35 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\models\workspace_template.dart:334:35 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\models\workspace_template.dart:338:32 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\models\workspace_template.dart:341:33 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\models\workspace_template.dart:344:35 - curly_braces_in_flow_control_structures
+   info - Don't use 'BuildContext's across async gaps - lib\screens\dashboard_screen.dart:21:7 - use_build_context_synchronously
+   info - Statements in an if should be enclosed in a block - lib\screens\goals_screen.dart:454:27 - curly_braces_in_flow_control_structures
+   info - Unnecessary braces in a string interpolation - lib\screens\journal_screen.dart:300:41 - unnecessary_brace_in_string_interps
+   info - Statements in an if should be enclosed in a block - lib\services\api_service.dart:19:7 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\services\api_service.dart:59:7 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\services\api_service.dart:79:7 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\services\api_service.dart:105:7 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\services\api_service.dart:145:7 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\services\api_service.dart:198:7 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\services\api_service.dart:215:7 - curly_braces_in_flow_control_structures
+   info - 'activeColor' is deprecated and shouldn't be used. Use activeThumbColor instead. This feature was deprecated after v3.31.0-2.0.pre - lib\widgets\zen_mode_dialog.dart:38:19 - deprecated_member_use
+

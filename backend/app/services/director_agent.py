@@ -34,16 +34,15 @@ Keep it to 3-5 key points. Be specific about goals, deadlines, and mood trends.
 Use emoji sparingly for emphasis. End with one motivating line."""
 
 
-def get_briefing():
+def get_briefing(user_id: int, api_key: str = None):
     """
-    Generate the Director's daily briefing.
-    Gathers context from goals, mood, habits, then calls Groq for the briefing.
+    Generate the Director's daily briefing for a specific user.
     """
-    context = _gather_context()
+    context = _gather_context(user_id)
     prompt = _build_prompt(context)
 
     try:
-        client = _get_client()
+        client = Groq(api_key=api_key) if api_key else _get_client()
         response = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": DIRECTOR_SYSTEM_PROMPT},
@@ -74,7 +73,7 @@ def get_briefing():
         }
 
 
-def _gather_context():
+def _gather_context(user_id: int):
     """Pull all relevant user data for the briefing."""
     context = {}
     today = datetime.now().strftime("%Y-%m-%d")
@@ -82,9 +81,10 @@ def _gather_context():
     with get_db() as conn:
         cursor = conn.cursor()
 
-        # Active goals with deadline status
+        # Active goals for this user
         cursor.execute(
-            "SELECT * FROM goals WHERE status = 'active' AND is_deleted = 0"
+            "SELECT * FROM goals WHERE user_id = ? AND status = 'active' AND is_deleted = 0",
+            (user_id,)
         )
         goals = rows_to_list(cursor.fetchall())
 
@@ -111,8 +111,8 @@ def _gather_context():
         # Recent mood (last 7 days of journal entries)
         week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         cursor.execute(
-            "SELECT mood_score, create_date FROM journal_entries WHERE create_date >= ? ORDER BY create_date DESC",
-            (week_ago,),
+            "SELECT mood_score, create_date FROM journal_entries WHERE user_id = ? AND create_date >= ? ORDER BY create_date DESC",
+            (user_id, week_ago),
         )
         moods = rows_to_list(cursor.fetchall())
         context["recent_moods"] = moods
@@ -126,18 +126,20 @@ def _gather_context():
 
         # Latest journal entry
         cursor.execute(
-            "SELECT content, mood_score, create_date FROM journal_entries ORDER BY id DESC LIMIT 1"
+            "SELECT content, mood_score, create_date FROM journal_entries WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+            (user_id,)
         )
         latest_journal = cursor.fetchone()
         context["latest_journal"] = dict(latest_journal) if latest_journal else None
 
         # Habit streaks
-        cursor.execute("SELECT title, current_streak, best_streak FROM routines")
+        cursor.execute("SELECT title, current_streak, best_streak FROM routines WHERE user_id = ?", (user_id,))
         context["habits"] = rows_to_list(cursor.fetchall())
 
         # Pending tasks count
         cursor.execute(
-            "SELECT COUNT(*) as count FROM tasks WHERE is_completed = 0"
+            "SELECT COUNT(*) as count FROM tasks WHERE user_id = ? AND is_completed = 0",
+            (user_id,)
         )
         context["pending_tasks"] = cursor.fetchone()["count"]
 

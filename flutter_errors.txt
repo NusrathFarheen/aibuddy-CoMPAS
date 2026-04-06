@@ -1,0 +1,11 @@
+Analyzing workspace_screen.dart...                              
+
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - mobile_app\lib\screens\workspace_screen.dart:64:55 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - mobile_app\lib\screens\workspace_screen.dart:246:60 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - mobile_app\lib\screens\workspace_screen.dart:259:60 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - mobile_app\lib\screens\workspace_screen.dart:303:61 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - mobile_app\lib\screens\workspace_screen.dart:393:35 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - mobile_app\lib\screens\workspace_screen.dart:418:41 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - mobile_app\lib\screens\workspace_screen.dart:455:47 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - mobile_app\lib\screens\workspace_screen.dart:501:63 - deprecated_member_use
+
