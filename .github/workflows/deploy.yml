@@ -17,7 +17,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.2' # Matches your local version
+          flutter-version: '3.41.2' # Using your local version
           channel: 'stable'
           
       - name: Install dependencies
@@ -28,8 +28,8 @@ jobs:
       - name: Build Web
         run: |
           cd mobile_app
-          # Added --dart-define for your backend URL if needed
-          flutter build web --release --base-href "/aibuddy-CoMPAS/" --web-renderer auto
+          # Removed --web-renderer auto as it was causing the crash
+          flutter build web --release --base-href "/aibuddy-CoMPAS/"
           
       - name: Deploy to GH Pages
         uses: peaceiris/actions-gh-pages@v3
