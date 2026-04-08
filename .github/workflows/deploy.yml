@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy Flutter Web to GitHub Pages
 
 on:
   push:
@@ -11,26 +11,37 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      
+      # 1. Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Setup Flutter (FIXED VERSION)
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.22.2'   # ✅ stable known working version
           channel: 'stable'
-          
+
+      # 3. Enable web explicitly (important!)
+      - name: Enable Flutter Web
+        run: flutter config --enable-web
+
+      # 4. Install dependencies
       - name: Install dependencies
         run: |
           cd mobile_app
           flutter pub get
-          
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          flutter-version: '<a version you know supports --web-renderer>'
-          
-      - name: Deploy to GH Pages
+
+      # 5. Build web (FIXED FLAGS)
+      - name: Build Flutter Web
+        run: |
+          cd mobile_app
+          flutter build web --release --base-href "/aibuddy-CoMPAS/"
+
+      # 6. Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
