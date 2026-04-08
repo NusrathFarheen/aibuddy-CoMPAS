@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: aibuddy-backend
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python run.py"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false

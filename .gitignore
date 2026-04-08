@@ -1,6 +1,8 @@
 # Python
 .venv/
+.env
 .env/
+backend/.env
 __pycache__/
 *.pyc
 *.pyo
@@ -13,8 +15,8 @@ develop-eggs/
 dist/
 downloads/
 eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -26,6 +28,9 @@ wheels/
 # Database
 planner.db
 chroma_db/
+
+# Uploads (local files)
+backend/uploads/
 
 # Flutter/Dart
 .dart_tool/

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 # Load .env from project root
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 
-from fastapi import FastAPI, HTTPException, File, UploadFile, Depends, Header
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -18,48 +18,11 @@ from typing import Optional, List, Any
 import uuid
 import shutil
 
-from .database import init_db, get_db, dict_from_row, rows_to_list, is_postgres
+from .database import init_db, get_db, dict_from_row, rows_to_list
 from .services.memory import init_memory, store_memory, search_memory, get_workspace_stats
 from .services.director_agent import get_briefing
 from .services.planner_agent import generate_plan
 from .services.chat_agent import chat, get_chat_history
-
-from jose import JWTError, jwt
-from passlib.context import CryptContext
-from fastapi.security import OAuth2PasswordBearer
-
-# Auth Config
-SECRET_KEY = os.getenv("JWT_SECRET", "super-secret-key-change-me")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30 * 24 * 60 # 30 days
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
-
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id_str: str = payload.get("sub")
-        if user_id_str is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return int(user_id_str)
-    except (JWTError, ValueError):
-        raise HTTPException(status_code=401, detail="Could not validate credentials")
-
-async def get_groq_key(x_groq_key: Optional[str] = Header(None)):
-    return x_groq_key
 
 # ============================================================================
 # App Setup
@@ -74,7 +37,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False, # Changed to False to allow wildcard origins in browser
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -102,20 +65,6 @@ app.mount("/uploads", StaticFiles(directory=os.path.join(os.path.dirname(os.path
 # ============================================================================
 # Pydantic Models (Request Bodies)
 # ============================================================================
-
-class UserCreate(BaseModel):
-    username: str
-    password: str
-    email: Optional[str] = None
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    username: str
 
 class GoalCreate(BaseModel):
     title: str
@@ -217,42 +166,15 @@ def root():
     }
 
 
+from fastapi import Request
+
 @app.get("/director/briefing")
-def director_briefing(user_id: int = Depends(get_current_user), groq_key: Optional[str] = Depends(get_groq_key)):
+def director_briefing(request: Request):
     """Get the Director's personalized daily briefing."""
-    return get_briefing(user_id, api_key=groq_key)
-
-# ============================================================================
-# AUTH ENDPOINTS
-# ============================================================================
-
-@app.post("/api/auth/register", response_model=Token)
-def register(user: UserCreate):
-    with get_db() as conn:
-        # Check if exists
-        existing = conn.execute("SELECT id FROM users WHERE username = ?", (user.username,)).fetchone()
-        if existing:
-            raise HTTPException(status_code=400, detail="Username already registered")
-        
-        hashed = get_password_hash(user.password)
-        cursor = conn.execute(
-            "INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)",
-            (user.username, hashed, user.email)
-        )
-        user_id = cursor.lastrowid if not is_postgres() else conn.execute("SELECT id FROM users WHERE username = %s", (user.username,)).fetchone()['id']
-        
-        access_token = create_access_token(data={"sub": str(user_id)})
-        return {"access_token": access_token, "token_type": "bearer", "username": user.username}
-
-@app.post("/api/auth/login", response_model=Token)
-def login(user: UserLogin):
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM users WHERE username = ?", (user.username,)).fetchone()
-        if not row or not verify_password(user.password, row["password_hash"]):
-            raise HTTPException(status_code=401, detail="Incorrect username or password")
-        
-        access_token = create_access_token(data={"sub": str(row["id"])})
-        return {"access_token": access_token, "token_type": "bearer", "username": row["username"]}
+    # Extract Groq key from headers if present
+    api_key = request.headers.get("X-Groq-Key")
+    # Use user_id=None to trigger Single User Mode resilience
+    return get_briefing(user_id=None, api_key=api_key)
 
 
 # ============================================================================
@@ -260,54 +182,42 @@ def login(user: UserLogin):
 # ============================================================================
 
 @app.get("/api/goals")
-def list_goals(user_id: int = Depends(get_current_user)):
-    """Fetch all active goals for current user."""
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM goals WHERE user_id = ? AND is_deleted = 0 ORDER BY is_pinned DESC, id DESC",
-            (user_id,)
-        ).fetchall()
-        return rows_to_list(rows)
-
-@app.post("/api/goals")
-def create_goal(goal: GoalCreate, user_id: int = Depends(get_current_user)):
-    """Deploy a new goal initiative."""
+def list_goals():
+    """List all active (non-deleted) goals."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO goals (user_id, title, description, deadline, template_id) VALUES (?, ?, ?, ?, ?)",
-            (user_id, goal.title, goal.description, goal.deadline, goal.template_id),
+            "SELECT * FROM goals WHERE is_deleted = 0 ORDER BY is_pinned DESC, id DESC"
         )
-        row = conn.execute("SELECT * FROM goals WHERE id = ?", (cursor.lastrowid,)).fetchone()
-        return dict_from_row(row)
+        return rows_to_list(cursor.fetchall())
 
 
 @app.get("/api/goals/{goal_id}/references")
-def list_references(goal_id: int, user_id: int = Depends(get_current_user)):
+def list_references(goal_id: int):
     """List all references for a goal."""
     with get_db() as conn:
         cursor = conn.execute(
-            "SELECT * FROM references_links WHERE goal_id = ? AND user_id = ? ORDER BY created_at DESC", (goal_id, user_id)
+            "SELECT * FROM references_links WHERE goal_id = ? ORDER BY created_at DESC", (goal_id,)
         )
         return rows_to_list(cursor.fetchall())
 
 
 @app.post("/api/references")
-def create_reference(ref: ReferenceCreate, user_id: int = Depends(get_current_user)):
+def create_reference(ref: ReferenceCreate):
     """Create a new reference link."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO references_links (goal_id, user_id, title, url) VALUES (?, ?, ?, ?)",
-            (ref.goal_id, user_id, ref.title, ref.url),
+            "INSERT INTO references_links (goal_id, title, url) VALUES (?, ?, ?)",
+            (ref.goal_id, ref.title, ref.url),
         )
         row = conn.execute("SELECT * FROM references_links WHERE id = ?", (cursor.lastrowid,)).fetchone()
         return dict_from_row(row)
 
 
 @app.delete("/api/references/{ref_id}")
-def delete_reference(ref_id: int, user_id: int = Depends(get_current_user)):
+def delete_reference(ref_id: int):
     """Delete a reference link."""
     with get_db() as conn:
-        conn.execute("DELETE FROM references_links WHERE id = ? AND user_id = ?", (ref_id, user_id))
+        conn.execute("DELETE FROM references_links WHERE id = ?", (ref_id,))
         return {"message": "Reference deleted", "id": ref_id}
 
 
@@ -319,22 +229,31 @@ def finalize_goal(goal_id: int):
 
 
 @app.post("/api/goals")
-def create_goal_with_plan(goal: GoalCreate, user_id: int = Depends(get_current_user), groq_key: Optional[str] = Depends(get_groq_key)):
+def create_goal(goal: GoalCreate):
     """Create a new goal and auto-generate tasks via the Planner Agent."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO goals (user_id, title, description, deadline, template_id) VALUES (?, ?, ?, ?, ?)",
-            (user_id, goal.title, goal.description, goal.deadline, goal.template_id),
+            "INSERT INTO goals (title, description, deadline, template_id) VALUES (?, ?, ?, ?)",
+            (goal.title, goal.description, goal.deadline, goal.template_id),
         )
         goal_id = cursor.lastrowid
 
     # Trigger Planner Agent to break goal into tasks
     try:
-        # Note: generate_plan also needs to be updated to accept user_id and api_key
-        tasks = generate_plan(goal_id, goal.title, goal.description, goal.template_id, user_id=user_id, api_key=groq_key)
+        tasks = generate_plan(goal_id, goal.title, goal.description, goal.template_id)
     except Exception as e:
         tasks = []
         print(f"⚠️ Planner Agent error: {e}")
+
+    # Store in task memory
+    try:
+        store_memory(
+            "task_workspace",
+            f"New goal created: {goal.title}. {goal.description}",
+            metadata={"type": "goal", "goal_id": str(goal_id)},
+        )
+    except Exception:
+        pass
 
     with get_db() as conn:
         row = conn.execute("SELECT * FROM goals WHERE id = ?", (goal_id,)).fetchone()
@@ -346,65 +265,79 @@ def create_goal_with_plan(goal: GoalCreate, user_id: int = Depends(get_current_u
 
 
 @app.get("/api/goals/{goal_id}")
-def get_goal(goal_id: int, user_id: int = Depends(get_current_user)):
+def get_goal(goal_id: int):
     """Get a single goal by ID."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM goals WHERE id = ? AND user_id = ? AND is_deleted = 0", (goal_id, user_id)).fetchone()
+        row = conn.execute("SELECT * FROM goals WHERE id = ? AND is_deleted = 0", (goal_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Goal not found")
         return dict_from_row(row)
 
 
 @app.put("/api/goals/{goal_id}")
-def update_goal(goal_id: int, update: GoalUpdate, user_id: int = Depends(get_current_user)):
+def update_goal(goal_id: int, update: GoalUpdate):
     """Update goal fields."""
     updates = {k: v for k, v in update.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
     set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [goal_id, user_id]
+    values = list(updates.values()) + [goal_id]
 
     with get_db() as conn:
-        conn.execute(f"UPDATE goals SET {set_clause} WHERE id = ? AND user_id = ?", values)
-        row = conn.execute("SELECT * FROM goals WHERE id = ? AND user_id = ?", (goal_id, user_id)).fetchone()
+        conn.execute(f"UPDATE goals SET {set_clause} WHERE id = ?", values)
+        row = conn.execute("SELECT * FROM goals WHERE id = ?", (goal_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Goal not found")
         return dict_from_row(row)
 
 
 @app.delete("/api/goals/{goal_id}")
-def delete_goal(goal_id: int, user_id: int = Depends(get_current_user)):
+def delete_goal(goal_id: int):
     """Soft-delete a goal (set is_deleted = 1)."""
     with get_db() as conn:
-        conn.execute("UPDATE goals SET is_deleted = 1 WHERE id = ? AND user_id = ?", (goal_id, user_id))
+        conn.execute("UPDATE goals SET is_deleted = 1 WHERE id = ?", (goal_id,))
         return {"message": "Goal archived", "id": goal_id}
 
 
-@app.get("/api/tasks")
-def list_all_tasks(user_id: int = Depends(get_current_user)):
-    """Get all tasks across all goals for current user."""
+# ============================================================================
+# TASKS
+# ============================================================================
+
+@app.get("/api/goals/{goal_id}/tasks")
+def list_tasks(goal_id: int):
+    """Get all tasks for a goal."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC", (user_id,))
+        cursor = conn.execute(
+            "SELECT * FROM tasks WHERE goal_id = ? ORDER BY id ASC", (goal_id,)
+        )
+        return rows_to_list(cursor.fetchall())
+
+
+@app.get("/api/tasks")
+def list_all_tasks():
+    """Get all tasks across all goals."""
+    with get_db() as conn:
+        cursor = conn.execute("SELECT * FROM tasks ORDER BY id DESC")
         return rows_to_list(cursor.fetchall())
 
 
 @app.put("/api/tasks/{task_id}")
-def update_task(task_id: int, update: TaskUpdate, user_id: int = Depends(get_current_user)):
+def update_task(task_id: int, update: TaskUpdate):
     """Update a task's status / completion."""
     updates = {k: v for k, v in update.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
+    # If marking complete, also set status to 'done'
     if updates.get("is_completed"):
         updates["status"] = "done"
 
     set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [task_id, user_id]
+    values = list(updates.values()) + [task_id]
 
     with get_db() as conn:
-        conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ? AND user_id = ?", values)
-        # ...
+        conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
 
         # Auto-update goal progress
         row = conn.execute("SELECT goal_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
@@ -437,32 +370,38 @@ def _update_goal_progress(conn, goal_id):
 # ============================================================================
 
 @app.get("/api/routines")
-def list_routines(user_id: int = Depends(get_current_user)):
-    """List all routines for current user with daily reset check."""
+def list_routines():
+    """List all routines, grouped by category, with daily reset check."""
     today = date.today().isoformat()
     with get_db() as conn:
-        # Reset routines for THIS user if they haven't been reset today
+        # 1. Perform daily reset check
+        # If any routine is marked as completed but its last_completed_date is NOT today,
+        # it means a new day has started, and we should reset 'is_completed' for ALL routines.
+        # This acts as our "cron jobs substitute" on every fetch.
         stale_check = conn.execute(
-            "SELECT count(*) FROM routines WHERE user_id = ? AND is_completed = 1 AND last_completed_date != ?", (user_id, today)
+            "SELECT count(*) FROM routines WHERE is_completed = 1 AND last_completed_date != ?", (today,)
         ).fetchone()[0]
         
         if stale_check > 0:
-            conn.execute("UPDATE routines SET is_completed = 0 WHERE user_id = ?", (user_id,))
+            conn.execute("UPDATE routines SET is_completed = 0")
+            # Update last_completed_date to NULL for routines that haven't been completed today?
+            # No, keep it so we know if the streak was broken tomorrow.
 
-        cursor = conn.execute("SELECT * FROM routines WHERE user_id = ? ORDER BY category, id", (user_id,))
+        cursor = conn.execute("SELECT * FROM routines ORDER BY category, id")
         routines = rows_to_list(cursor.fetchall())
+        # Add badge info
         for r in routines:
             r["badge"] = _get_badge(r["current_streak"] or 0)
         return routines
 
 
 @app.post("/api/routines")
-def create_routine(routine: RoutineCreate, user_id: int = Depends(get_current_user)):
+def create_routine(routine: RoutineCreate):
     """Create a new routine/habit."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO routines (user_id, title, category) VALUES (?, ?, ?)",
-            (user_id, routine.title, routine.category),
+            "INSERT INTO routines (title, category) VALUES (?, ?)",
+            (routine.title, routine.category),
         )
         row = conn.execute("SELECT * FROM routines WHERE id = ?", (cursor.lastrowid,)).fetchone()
         result = dict_from_row(row)
@@ -558,24 +497,23 @@ def _get_badge(streak: int) -> str:
 # ============================================================================
 
 @app.get("/api/journal")
-def list_journal(user_id: int = Depends(get_current_user)):
-    """List all journal entries for current user."""
+def list_journal():
+    """List all journal entries, most recent first."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM journal_entries WHERE user_id = ? ORDER BY id DESC", (user_id,))
+        cursor = conn.execute("SELECT * FROM journal_entries ORDER BY id DESC")
         return rows_to_list(cursor.fetchall())
 
 
 @app.post("/api/journal")
-def create_journal(entry: JournalCreate, user_id: int = Depends(get_current_user)):
+def create_journal(entry: JournalCreate):
     """Create a journal entry with mood score."""
     today = date.today().isoformat()
 
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO journal_entries (user_id, goal_id, content, mood_score, create_date) VALUES (?, ?, ?, ?, ?)",
-            (user_id, entry.goal_id, entry.content, entry.mood_score, today),
+            "INSERT INTO journal_entries (goal_id, content, mood_score, create_date) VALUES (?, ?, ?, ?)",
+            (entry.goal_id, entry.content, entry.mood_score, today),
         )
-        # ...
 
         # Store mood data in wellness memory
         try:
@@ -596,22 +534,21 @@ def create_journal(entry: JournalCreate, user_id: int = Depends(get_current_user
 # ============================================================================
 
 @app.get("/api/creations")
-def list_creations(user_id: int = Depends(get_current_user)):
-    """List all creations/ideas for current user."""
+def list_creations():
+    """List all creations/ideas."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM creations WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+        cursor = conn.execute("SELECT * FROM creations ORDER BY created_at DESC")
         return rows_to_list(cursor.fetchall())
 
 
 @app.post("/api/creations")
-def create_creation(creation: CreationCreate, user_id: int = Depends(get_current_user)):
+def create_creation(creation: CreationCreate):
     """Create a new creation/idea."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO creations (user_id, title, content, type) VALUES (?, ?, ?, ?)",
-            (user_id, creation.title, creation.content, creation.type),
+            "INSERT INTO creations (title, content, type) VALUES (?, ?, ?)",
+            (creation.title, creation.content, creation.type),
         )
-        # ...
 
         # Store in research memory
         try:
@@ -628,19 +565,21 @@ def create_creation(creation: CreationCreate, user_id: int = Depends(get_current
 
 
 @app.delete("/api/creations/{item_id}")
-async def delete_creation(item_id: int, user_id: int = Depends(get_current_user)):
+async def delete_creation(item_id: int):
     with get_db() as conn:
-        conn.execute("DELETE FROM creations WHERE id = ? AND user_id = ?", (item_id, user_id))
+        conn.execute("DELETE FROM creations WHERE id = ?", (item_id,))
     return {"status": "success"}
 
 @app.put("/api/creations/{item_id}")
-async def update_creation(item_id: int, updates: CreationUpdate, user_id: int = Depends(get_current_user)):
+async def update_creation(item_id: int, updates: CreationUpdate):
     with get_db() as conn:
-        update_data = updates.model_dump(exclude_unset=True)
-        # ...
+        update_data = updates.dict(exclude_unset=True)
+        if not update_data:
+            return {"status": "no updates"}
+        
         set_clause = ", ".join([f"{k} = ?" for k in update_data.keys()])
-        params = list(update_data.values()) + [item_id, user_id]
-        conn.execute(f"UPDATE creations SET {set_clause} WHERE id = ? AND user_id = ?", params)
+        params = list(update_data.values()) + [item_id]
+        conn.execute(f"UPDATE creations SET {set_clause} WHERE id = ?", params)
     return {"status": "success"}
 
 
@@ -649,19 +588,19 @@ async def update_creation(item_id: int, updates: CreationUpdate, user_id: int = 
 # ============================================================================
 
 @app.get("/api/notes")
-def list_notes(user_id: int = Depends(get_current_user)):
-    """List all notes for current user."""
+def list_notes():
+    """List all notes."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+        cursor = conn.execute("SELECT * FROM notes ORDER BY created_at DESC")
         return rows_to_list(cursor.fetchall())
 
 
 @app.get("/api/goals/{goal_id}/notes")
-def list_goal_notes(goal_id: int, user_id: int = Depends(get_current_user)):
+def list_goal_notes(goal_id: int):
     """List notes for a specific goal."""
     with get_db() as conn:
         cursor = conn.execute(
-            "SELECT * FROM notes WHERE goal_id = ? AND user_id = ? ORDER BY created_at DESC", (goal_id, user_id)
+            "SELECT * FROM notes WHERE goal_id = ? ORDER BY created_at DESC", (goal_id,)
         )
         return rows_to_list(cursor.fetchall())
 
@@ -702,16 +641,15 @@ def delete_note(note_id: int):
 # ============================================================================
 
 @app.post("/api/chat")
-def chat_endpoint(msg: ChatMessage, user_id: int = Depends(get_current_user), groq_key: Optional[str] = Depends(get_groq_key)):
+def send_chat(msg: ChatMessage):
     """Send a message to the Chat Agent and get an AI response."""
-    # Note: chat agent needs to handle user_id for history
-    return chat(msg.message, msg.goal_id, msg.system_instruction, api_key=groq_key)
+    return chat(msg.message, msg.goal_id, msg.system_instruction)
 
 
 @app.get("/api/chat/history")
-def chat_history(goal_id: Optional[int] = None, user_id: int = Depends(get_current_user)):
-    """Get chat message history for current user."""
-    return get_chat_history(goal_id, user_id=user_id)
+def chat_history(goal_id: Optional[int] = None, limit: int = 50):
+    """Get chat message history."""
+    return get_chat_history(goal_id, limit)
 
 
 # ============================================================================
@@ -731,7 +669,6 @@ def mark_notification_read(notif_id: int):
     """Mark a notification as read."""
     with get_db() as conn:
         conn.execute("UPDATE notifications SET is_read = 1 WHERE id = ?", (notif_id,))
-        conn.execute("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?", (notif_id, user_id))
         return {"message": "Marked as read"}
 
 
@@ -740,11 +677,11 @@ def mark_notification_read(notif_id: int):
 # ============================================================================
 
 @app.get("/api/goals/{goal_id}/fitness/logs")
-def list_fitness_logs(goal_id: int, log_type: Optional[str] = None, user_id: int = Depends(get_current_user)):
-    """List fitness logs for current user."""
+def list_fitness_logs(goal_id: int, log_type: Optional[str] = None):
+    """List fitness logs for a specific goal."""
     with get_db() as conn:
-        query = "SELECT * FROM fitness_logs WHERE goal_id = ? AND user_id = ? "
-        params: list = [goal_id, user_id]
+        query = "SELECT * FROM fitness_logs WHERE goal_id = ? "
+        params: list = [goal_id]
         if log_type:
             query += "AND type = ? "
             params.append(log_type)
@@ -754,34 +691,34 @@ def list_fitness_logs(goal_id: int, log_type: Optional[str] = None, user_id: int
 
 
 @app.post("/api/fitness/logs")
-def create_fitness_log(log: FitnessLogCreate, user_id: int = Depends(get_current_user)):
-    """Create a new fitness log."""
+def create_fitness_log(log: FitnessLogCreate):
+    """Create a new fitness log (workout, diet, or metric)."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO fitness_logs (user_id, goal_id, date, type, category, value) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, log.goal_id, log.date, log.type, log.category, log.value),
+            "INSERT INTO fitness_logs (goal_id, date, type, category, value) VALUES (?, ?, ?, ?, ?)",
+            (log.goal_id, log.date, log.type, log.category, log.value),
         )
         row = conn.execute("SELECT * FROM fitness_logs WHERE id = ?", (cursor.lastrowid,)).fetchone()
         return dict_from_row(row)
 
 
 @app.get("/api/goals/{goal_id}/fitness/photos")
-def list_fitness_photos(goal_id: int, user_id: int = Depends(get_current_user)):
-    """List progress photos for current user."""
+def list_fitness_photos(goal_id: int):
+    """List progress photos for a fitness goal."""
     with get_db() as conn:
         cursor = conn.execute(
-            "SELECT * FROM progress_photos WHERE goal_id = ? AND user_id = ? ORDER BY date DESC", (goal_id, user_id)
+            "SELECT * FROM progress_photos WHERE goal_id = ? ORDER BY date DESC", (goal_id,)
         )
         return rows_to_list(cursor.fetchall())
 
 
 @app.post("/api/fitness/photos")
-def create_fitness_photo(photo: FitnessPhotoCreate, user_id: int = Depends(get_current_user)):
+def create_fitness_photo(photo: FitnessPhotoCreate):
     """Log a new progress photo."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO progress_photos (user_id, goal_id, date, image_path, caption) VALUES (?, ?, ?, ?, ?)",
-            (user_id, photo.goal_id, photo.date, photo.image_path, photo.caption),
+            "INSERT INTO progress_photos (goal_id, date, image_path, caption) VALUES (?, ?, ?, ?)",
+            (photo.goal_id, photo.date, photo.image_path, photo.caption),
         )
         row = conn.execute("SELECT * FROM progress_photos WHERE id = ?", (cursor.lastrowid,)).fetchone()
         return dict_from_row(row)
@@ -789,11 +726,20 @@ def create_fitness_photo(photo: FitnessPhotoCreate, user_id: int = Depends(get_c
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
-    """Upload a file to the server and return its relative URL."""
-    # Ensure file is an image
+    """Upload a file to the server/cloud and return its URL."""
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image files are allowed.")
     
+    # Use Cloudinary if configured
+    if os.getenv("CLOUDINARY_URL"):
+        try:
+            import cloudinary.uploader
+            result = cloudinary.uploader.upload(file.file)
+            return {"url": result["secure_url"]}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Cloudinary Upload Error: {e}")
+
+    # Fallback to local upload
     filename = f"{uuid.uuid4()}_{file.filename}"
     upload_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", filename)
     
