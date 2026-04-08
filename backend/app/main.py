@@ -61,6 +61,14 @@ async def startup():
 # Serve the uploads directory
 app.mount("/uploads", StaticFiles(directory=os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")), name="uploads")
 
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "message": "AIBuddy (CoM-PAS) Backend is running.",
+        "version": "2.0.0"
+    }
+
 
 # ============================================================================
 # Pydantic Models (Request Bodies)
