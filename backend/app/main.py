@@ -216,10 +216,12 @@ from fastapi import Request
 @app.get("/director/briefing")
 def director_briefing(request: Request):
     """Get the Director's personalized daily briefing."""
-    # Extract Groq key from headers if present
-    api_key = request.headers.get("X-Groq-Key")
-    # Use user_id=None to trigger Single User Mode resilience
-    return get_briefing(user_id=None, api_key=api_key)
+    try:
+        api_key = request.headers.get("X-Groq-Key")
+        return get_briefing(user_id=None, api_key=api_key)
+    except Exception as e:
+        import traceback
+        return {"briefing": "Director crashed: " + str(e), "traceback": traceback.format_exc()}
 
 
 # ============================================================================
@@ -229,11 +231,15 @@ def director_briefing(request: Request):
 @app.get("/api/goals")
 def list_goals():
     """List all active (non-deleted) goals."""
-    with get_db() as conn:
-        cursor = conn.execute(
-            q("SELECT * FROM goals WHERE is_deleted = FALSE ORDER BY is_pinned DESC, id DESC")
-        )
-        return rows_to_list(cursor.fetchall())
+    try:
+        with get_db() as conn:
+            cursor = conn.execute(
+                q("SELECT * FROM goals WHERE is_deleted = FALSE ORDER BY is_pinned DESC, id DESC")
+            )
+            return rows_to_list(cursor.fetchall())
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.get("/api/goals/{goal_id}/references")
