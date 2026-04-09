@@ -5,6 +5,7 @@ import '../widgets/glass_card.dart';
 import '../widgets/goal_wave_card.dart';
 import 'workspace_screen.dart';
 import '../widgets/zen_mode_dialog.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -111,44 +112,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 // Director's Briefing
                 GlassCard(
                   margin: EdgeInsets.zero,
-                  padding: const EdgeInsets.all(24),
+                  padding: EdgeInsets.zero, // Padding handled by ExpansionTile
                   glowColor: Colors.cyanAccent.withValues(alpha: 0.1),
-                  child: Column(
-                    children: [
-                      Row(
+                  child: Theme(
+                    data: Theme.of(context).copyWith(
+                      dividerColor: Colors.transparent, // Remove borders
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                    ),
+                    child: ExpansionTile(
+                      initiallyExpanded: false,
+                      tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      childrenPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                      iconColor: Colors.cyanAccent,
+                      collapsedIconColor: Colors.white38,
+                      title: Row(
                         children: [
                           Stack(
                             alignment: Alignment.center,
                             children: [
                               Container(
-                                width: 50, height: 50,
+                                width: 40, height: 40,
                                 decoration: BoxDecoration(color: Colors.cyanAccent.withValues(alpha: 0.05), shape: BoxShape.circle),
                               ),
-                              const Icon(Icons.auto_awesome, color: Colors.cyanAccent, size: 24),
+                              const Icon(Icons.auto_awesome, color: Colors.cyanAccent, size: 20),
                             ],
                           ),
-                          const SizedBox(width: 20),
+                          const SizedBox(width: 16),
                           const Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Director's Briefing", style: TextStyle(color: Colors.white, fontSize: 11, letterSpacing: 2, fontWeight: FontWeight.w900)),
-                              Text("INTELLIGENCE FEED", style: TextStyle(color: Colors.white38, fontSize: 9, letterSpacing: 1.5)),
+                              Text("Director's Briefing", style: TextStyle(color: Colors.white, fontSize: 13, letterSpacing: 1.5, fontWeight: FontWeight.w900)),
+                              Text("INTELLIGENCE FEED", style: TextStyle(color: Colors.cyanAccent, fontSize: 9, letterSpacing: 1.5)),
                             ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 20),
-                      Container(
-                        constraints: const BoxConstraints(maxHeight: 120),
-                        child: SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          child: Text(
-                            provider.briefing?['briefing'] ?? "Good afternoon. Your cognitive load is currently balanced. Focus on high-impact tasks to maximize efficiency. Scanning neural nodes for potential bottlenecks...",
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13, height: 1.6, letterSpacing: 0.3),
+                      children: [
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 250),
+                          child: SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            child: MarkdownBody(
+                              data: provider.briefing?['briefing'] ?? "Scanning neural nodes... No current briefing available.",
+                              styleSheet: MarkdownStyleSheet(
+                                p: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13, height: 1.6),
+                                strong: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold),
+                                listBullet: TextStyle(color: Colors.cyanAccent.withValues(alpha: 0.8)),
+                                h1: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                h2: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
 
