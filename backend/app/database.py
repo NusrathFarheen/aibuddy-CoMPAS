@@ -209,36 +209,37 @@ def init_db():
         cursor.execute(f"CREATE TABLE IF NOT EXISTS references_links (id { 'SERIAL' if is_postgres() else 'INTEGER' } PRIMARY KEY { '' if is_postgres() else 'AUTOINCREMENT' }, user_id INTEGER REFERENCES users(id), goal_id INTEGER REFERENCES goals(id), title TEXT NOT NULL, url TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute(f"CREATE TABLE IF NOT EXISTS journal_entries (id { 'SERIAL' if is_postgres() else 'INTEGER' } PRIMARY KEY { '' if is_postgres() else 'AUTOINCREMENT' }, user_id INTEGER REFERENCES users(id), goal_id INTEGER REFERENCES goals(id), content TEXT, mood_score INTEGER, create_date TEXT)")
 
-        # Simple Migrations for Existing Tables
-        migration_cols = [
-            ("goals", "user_id", "INTEGER REFERENCES users(id)"),
-            ("tasks", "user_id", "INTEGER REFERENCES users(id)"),
-            ("routines", "user_id", "INTEGER REFERENCES users(id)"),
-            ("creations", "user_id", "INTEGER REFERENCES users(id)"),
-            ("fitness_logs", "user_id", "INTEGER REFERENCES users(id)"),
-            ("progress_photos", "user_id", "INTEGER REFERENCES users(id)")
-        ]
-        for table, col, def_val in migration_cols:
-            try:
-                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {def_val}")
-            except:
-                pass 
+        if not is_postgres():
+            # Simple Migrations for Existing Tables
+            migration_cols = [
+                ("goals", "user_id", "INTEGER REFERENCES users(id)"),
+                ("tasks", "user_id", "INTEGER REFERENCES users(id)"),
+                ("routines", "user_id", "INTEGER REFERENCES users(id)"),
+                ("creations", "user_id", "INTEGER REFERENCES users(id)"),
+                ("fitness_logs", "user_id", "INTEGER REFERENCES users(id)"),
+                ("progress_photos", "user_id", "INTEGER REFERENCES users(id)")
+            ]
+            for table, col, def_val in migration_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {def_val}")
+                except:
+                    pass 
 
-        # Simple Migrations for existing databases
-        migration_cols = [
-            ("goals", "is_archived", "TEXT DEFAULT NULL"),
-            ("tasks", "last_completed", "TEXT DEFAULT NULL"), 
-            ("creations", "is_archived", "TEXT DEFAULT NULL"),
-            ("goals", "current_stage", "INTEGER DEFAULT 0"),
-            ("goals", "author_name", "TEXT"),
-            ("goals", "author_orcid", "TEXT"),
-            ("goals", "author_affiliation", "TEXT")
-        ]
-        for table, col, def_val in migration_cols:
-            try:
-                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {def_val}")
-            except:
-                pass # Already exists
+            # Simple Migrations for existing databases
+            migration_cols2 = [
+                ("goals", "is_archived", "TEXT DEFAULT NULL"),
+                ("tasks", "last_completed", "TEXT DEFAULT NULL"), 
+                ("creations", "is_archived", "TEXT DEFAULT NULL"),
+                ("goals", "current_stage", "INTEGER DEFAULT 0"),
+                ("goals", "author_name", "TEXT"),
+                ("goals", "author_orcid", "TEXT"),
+                ("goals", "author_affiliation", "TEXT")
+            ]
+            for table, col, def_val in migration_cols2:
+                try:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {def_val}")
+                except:
+                    pass # Already exists
 
     print(f"✅ Database initialized ({'Postgres' if is_postgres() else 'SQLite'})")
 
