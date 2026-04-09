@@ -15,13 +15,19 @@ DB_URL = os.getenv("DATABASE_URL")
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "planner.db")
 
 def is_postgres():
-    return DB_URL is not None and DB_URL.startswith("postgres")
+    return DB_URL is not None and (DB_URL.startswith("postgres://") or DB_URL.startswith("postgresql://"))
+
+def get_db_url():
+    """Fixes postgres:// to postgresql:// if needed for psycopg2."""
+    if DB_URL and DB_URL.startswith("postgres://"):
+        return DB_URL.replace("postgres://", "postgresql://", 1)
+    return DB_URL
 
 @contextmanager
 def get_db():
     """Context manager for database connections (SQLite or Postgres)."""
     if is_postgres():
-        conn = psycopg2.connect(DB_URL)
+        conn = psycopg2.connect(get_db_url())
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         try:
             yield conn
@@ -184,7 +190,14 @@ def init_db():
             except:
                 pass # Already exists
 
-    print("✅ Database initialized at:", DB_PATH)
+    print(f"✅ Database initialized ({'Postgres' if is_postgres() else 'SQLite'})")
+
+
+def q(query):
+    """Normalizes query placeholders for SQLite (?) vs Postgres (%s)."""
+    if is_postgres():
+        return query.replace("?", "%s")
+    return query
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ Supports context-aware conversations with memory retrieval.
 
 import os
 from groq import Groq
-from ..database import get_db
+from ..database import get_db, q
 from .memory import search_memory, store_memory
 
 _client = None
@@ -71,7 +71,7 @@ def chat(message: str, goal_id: int = None, system_instruction: str = None, api_
         
     if goal_id:
         with get_db() as conn:
-            row = conn.execute("SELECT title, description FROM goals WHERE id = ?", (goal_id,)).fetchone()
+            row = conn.execute(q("SELECT title, description FROM goals WHERE id = ?"), (goal_id,)).fetchone()
             if row:
                 base_prompt += f"\n\n[CRITICAL INSTRUCTION] You are currently inside a dedicated Workspace for a specific goal: '{row['title']}'.\nGoal Description: '{row['description']}'.\nDo NOT ask the user which goal they want to work on. Focus ONLY on this specific goal, and use the user's Drafts and Notes provided in the context below to help them achieve it."
 
@@ -120,12 +120,12 @@ def _get_recent_history(goal_id: int = None, limit: int = 10):
     with get_db() as conn:
         if goal_id:
             cursor = conn.execute(
-                "SELECT role, content FROM chat_messages WHERE goal_id = ? ORDER BY id DESC LIMIT ?",
+                q("SELECT role, content FROM chat_messages WHERE goal_id = ? ORDER BY id DESC LIMIT ?"),
                 (goal_id, limit),
             )
         else:
             cursor = conn.execute(
-                "SELECT role, content FROM chat_messages ORDER BY id DESC LIMIT ?",
+                q("SELECT role, content FROM chat_messages ORDER BY id DESC LIMIT ?"),
                 (limit,),
             )
         rows = cursor.fetchall()
@@ -138,7 +138,7 @@ def _save_message(goal_id, role, content):
     try:
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO chat_messages (goal_id, role, content) VALUES (?, ?, ?)",
+                q("INSERT INTO chat_messages (goal_id, role, content) VALUES (?, ?, ?)"),
                 (goal_id, role, content),
             )
     except Exception:
@@ -150,12 +150,12 @@ def get_chat_history(goal_id: int = None, limit: int = 50):
     with get_db() as conn:
         if goal_id:
             cursor = conn.execute(
-                "SELECT * FROM chat_messages WHERE goal_id = ? ORDER BY timestamp ASC LIMIT ?",
+                q("SELECT * FROM chat_messages WHERE goal_id = ? ORDER BY timestamp ASC LIMIT ?"),
                 (goal_id, limit),
             )
         else:
             cursor = conn.execute(
-                "SELECT * FROM chat_messages ORDER BY timestamp ASC LIMIT ?",
+                q("SELECT * FROM chat_messages ORDER BY timestamp ASC LIMIT ?"),
                 (limit,),
             )
         return [dict(r) for r in cursor.fetchall()]

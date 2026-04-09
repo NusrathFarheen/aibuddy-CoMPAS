@@ -18,7 +18,7 @@ from typing import Optional, List, Any
 import uuid
 import shutil
 
-from .database import init_db, get_db, dict_from_row, rows_to_list
+from .database import init_db, get_db, dict_from_row, rows_to_list, q
 from .services.memory import init_memory, store_memory, search_memory, get_workspace_stats
 from .services.director_agent import get_briefing
 from .services.planner_agent import generate_plan
@@ -36,8 +36,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False, # Changed to False to allow wildcard origins in browser
+    allow_origins=[
+        "http://localhost:8000",
+        "http://localhost:3000",
+        "https://nusrathfarheen.github.io"
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -194,7 +198,7 @@ def list_goals():
     """List all active (non-deleted) goals."""
     with get_db() as conn:
         cursor = conn.execute(
-            "SELECT * FROM goals WHERE is_deleted = 0 ORDER BY is_pinned DESC, id DESC"
+            q("SELECT * FROM goals WHERE is_deleted = 0 ORDER BY is_pinned DESC, id DESC")
         )
         return rows_to_list(cursor.fetchall())
 
@@ -204,7 +208,7 @@ def list_references(goal_id: int):
     """List all references for a goal."""
     with get_db() as conn:
         cursor = conn.execute(
-            "SELECT * FROM references_links WHERE goal_id = ? ORDER BY created_at DESC", (goal_id,)
+            q("SELECT * FROM references_links WHERE goal_id = ? ORDER BY created_at DESC"), (goal_id,)
         )
         return rows_to_list(cursor.fetchall())
 
@@ -214,10 +218,12 @@ def create_reference(ref: ReferenceCreate):
     """Create a new reference link."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO references_links (goal_id, title, url) VALUES (?, ?, ?)",
+            q("INSERT INTO references_links (goal_id, title, url) VALUES (?, ?, ?)"),
             (ref.goal_id, ref.title, ref.url),
         )
-        row = conn.execute("SELECT * FROM references_links WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        # Handle SQLite lastrowid vs Postgres returning (simplified)
+        last_id = cursor.lastrowid
+        row = conn.execute(q("SELECT * FROM references_links WHERE id = ?"), (last_id,)).fetchone()
         return dict_from_row(row)
 
 
@@ -225,7 +231,7 @@ def create_reference(ref: ReferenceCreate):
 def delete_reference(ref_id: int):
     """Delete a reference link."""
     with get_db() as conn:
-        conn.execute("DELETE FROM references_links WHERE id = ?", (ref_id,))
+        conn.execute(q("DELETE FROM references_links WHERE id = ?"), (ref_id,))
         return {"message": "Reference deleted", "id": ref_id}
 
 
@@ -241,9 +247,10 @@ def create_goal(goal: GoalCreate):
     """Create a new goal and auto-generate tasks via the Planner Agent."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO goals (title, description, deadline, template_id) VALUES (?, ?, ?, ?)",
+            q("INSERT INTO goals (title, description, deadline, template_id) VALUES (?, ?, ?, ?)"),
             (goal.title, goal.description, goal.deadline, goal.template_id),
         )
+        goal_id = cursor.lastrowid
         goal_id = cursor.lastrowid
 
     # Trigger Planner Agent to break goal into tasks
@@ -264,7 +271,7 @@ def create_goal(goal: GoalCreate):
         pass
 
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM goals WHERE id = ?", (goal_id,)).fetchone()
+        row = conn.execute(q("SELECT * FROM goals WHERE id = ?"), (goal_id,)).fetchone()
         return {
             "goal": dict_from_row(row),
             "generated_tasks": tasks,
@@ -276,7 +283,7 @@ def create_goal(goal: GoalCreate):
 def get_goal(goal_id: int):
     """Get a single goal by ID."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM goals WHERE id = ? AND is_deleted = 0", (goal_id,)).fetchone()
+        row = conn.execute(q("SELECT * FROM goals WHERE id = ? AND is_deleted = 0"), (goal_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Goal not found")
         return dict_from_row(row)
@@ -293,8 +300,8 @@ def update_goal(goal_id: int, update: GoalUpdate):
     values = list(updates.values()) + [goal_id]
 
     with get_db() as conn:
-        conn.execute(f"UPDATE goals SET {set_clause} WHERE id = ?", values)
-        row = conn.execute("SELECT * FROM goals WHERE id = ?", (goal_id,)).fetchone()
+        conn.execute(q(f"UPDATE goals SET {set_clause} WHERE id = ?"), values)
+        row = conn.execute(q("SELECT * FROM goals WHERE id = ?"), (goal_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Goal not found")
         return dict_from_row(row)
@@ -304,7 +311,7 @@ def update_goal(goal_id: int, update: GoalUpdate):
 def delete_goal(goal_id: int):
     """Soft-delete a goal (set is_deleted = 1)."""
     with get_db() as conn:
-        conn.execute("UPDATE goals SET is_deleted = 1 WHERE id = ?", (goal_id,))
+        conn.execute(q("UPDATE goals SET is_deleted = 1 WHERE id = ?"), (goal_id,))
         return {"message": "Goal archived", "id": goal_id}
 
 
@@ -317,7 +324,7 @@ def list_tasks(goal_id: int):
     """Get all tasks for a goal."""
     with get_db() as conn:
         cursor = conn.execute(
-            "SELECT * FROM tasks WHERE goal_id = ? ORDER BY id ASC", (goal_id,)
+            q("SELECT * FROM tasks WHERE goal_id = ? ORDER BY id ASC"), (goal_id,)
         )
         return rows_to_list(cursor.fetchall())
 
@@ -326,7 +333,7 @@ def list_tasks(goal_id: int):
 def list_all_tasks():
     """Get all tasks across all goals."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM tasks ORDER BY id DESC")
+        cursor = conn.execute(q("SELECT * FROM tasks ORDER BY id DESC"))
         return rows_to_list(cursor.fetchall())
 
 
@@ -345,14 +352,14 @@ def update_task(task_id: int, update: TaskUpdate):
     values = list(updates.values()) + [task_id]
 
     with get_db() as conn:
-        conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
+        conn.execute(q(f"UPDATE tasks SET {set_clause} WHERE id = ?"), values)
 
         # Auto-update goal progress
-        row = conn.execute("SELECT goal_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute(q("SELECT goal_id FROM tasks WHERE id = ?"), (task_id,)).fetchone()
         if row:
             _update_goal_progress(conn, row["goal_id"])
 
-        updated = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        updated = conn.execute(q("SELECT * FROM tasks WHERE id = ?"), (task_id,)).fetchone()
         if not updated:
             raise HTTPException(status_code=404, detail="Task not found")
         return dict_from_row(updated)
@@ -363,14 +370,14 @@ def _update_goal_progress(conn, goal_id):
     if not goal_id:
         return
     cursor = conn.execute(
-        "SELECT COUNT(*) as total, SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as done FROM tasks WHERE goal_id = ?",
+        q("SELECT COUNT(*) as total, SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as done FROM tasks WHERE goal_id = ?"),
         (goal_id,),
     )
     row = cursor.fetchone()
     total = row["total"]
     done = row["done"] or 0
     progress = int((done / total) * 100) if total > 0 else 0
-    conn.execute("UPDATE goals SET progress = ? WHERE id = ?", (progress, goal_id))
+    conn.execute(q("UPDATE goals SET progress = ? WHERE id = ?"), (progress, goal_id))
 
 
 # ============================================================================
@@ -387,15 +394,15 @@ def list_routines():
         # it means a new day has started, and we should reset 'is_completed' for ALL routines.
         # This acts as our "cron jobs substitute" on every fetch.
         stale_check = conn.execute(
-            "SELECT count(*) FROM routines WHERE is_completed = 1 AND last_completed_date != ?", (today,)
+            q("SELECT count(*) FROM routines WHERE is_completed = 1 AND last_completed_date != ?"), (today,)
         ).fetchone()[0]
         
         if stale_check > 0:
-            conn.execute("UPDATE routines SET is_completed = 0")
+            conn.execute(q("UPDATE routines SET is_completed = 0"))
             # Update last_completed_date to NULL for routines that haven't been completed today?
             # No, keep it so we know if the streak was broken tomorrow.
 
-        cursor = conn.execute("SELECT * FROM routines ORDER BY category, id")
+        cursor = conn.execute(q("SELECT * FROM routines ORDER BY category, id"))
         routines = rows_to_list(cursor.fetchall())
         # Add badge info
         for r in routines:
@@ -408,10 +415,10 @@ def create_routine(routine: RoutineCreate):
     """Create a new routine/habit."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO routines (title, category) VALUES (?, ?)",
+            q("INSERT INTO routines (title, category) VALUES (?, ?)"),
             (routine.title, routine.category),
         )
-        row = conn.execute("SELECT * FROM routines WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        row = conn.execute(q("SELECT * FROM routines WHERE id = ?"), (cursor.lastrowid,)).fetchone()
         result = dict_from_row(row)
         result["badge"] = _get_badge(0)
         return result
@@ -424,7 +431,7 @@ def toggle_routine(routine_id: int):
     yesterday = (date.today() - timedelta(days=1)).isoformat()
 
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM routines WHERE id = ?", (routine_id,)).fetchone()
+        row = conn.execute(q("SELECT * FROM routines WHERE id = ?"), (routine_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Routine not found")
 
@@ -457,7 +464,7 @@ def toggle_routine(routine_id: int):
         best_streak = max(best_streak, current_streak)
 
         conn.execute(
-            "UPDATE routines SET is_completed = ?, last_completed_date = ?, current_streak = ?, best_streak = ? WHERE id = ?",
+            q("UPDATE routines SET is_completed = ?, last_completed_date = ?, current_streak = ?, best_streak = ? WHERE id = ?"),
             (new_status, today, current_streak, best_streak, routine_id),
         )
 
@@ -472,7 +479,7 @@ def toggle_routine(routine_id: int):
             except Exception:
                 pass
 
-        updated = conn.execute("SELECT * FROM routines WHERE id = ?", (routine_id,)).fetchone()
+        updated = conn.execute(q("SELECT * FROM routines WHERE id = ?"), (routine_id,)).fetchone()
         result = dict_from_row(updated)
         result["badge"] = _get_badge(current_streak)
         return result
@@ -482,7 +489,7 @@ def toggle_routine(routine_id: int):
 def reset_daily_routines():
     """Reset all routine completion status for a new day."""
     with get_db() as conn:
-        conn.execute("UPDATE routines SET is_completed = 0")
+        conn.execute(q("UPDATE routines SET is_completed = 0"))
         return {"message": "Daily routines reset"}
 
 
@@ -508,7 +515,7 @@ def _get_badge(streak: int) -> str:
 def list_journal():
     """List all journal entries, most recent first."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM journal_entries ORDER BY id DESC")
+        cursor = conn.execute(q("SELECT * FROM journal_entries ORDER BY id DESC"))
         return rows_to_list(cursor.fetchall())
 
 
@@ -519,7 +526,7 @@ def create_journal(entry: JournalCreate):
 
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO journal_entries (goal_id, content, mood_score, create_date) VALUES (?, ?, ?, ?)",
+            q("INSERT INTO journal_entries (goal_id, content, mood_score, create_date) VALUES (?, ?, ?, ?)"),
             (entry.goal_id, entry.content, entry.mood_score, today),
         )
 
@@ -533,7 +540,7 @@ def create_journal(entry: JournalCreate):
         except Exception:
             pass
 
-        row = conn.execute("SELECT * FROM journal_entries WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        row = conn.execute(q("SELECT * FROM journal_entries WHERE id = ?"), (cursor.lastrowid,)).fetchone()
         return dict_from_row(row)
 
 
@@ -545,7 +552,7 @@ def create_journal(entry: JournalCreate):
 def list_creations():
     """List all creations/ideas."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM creations ORDER BY created_at DESC")
+        cursor = conn.execute(q("SELECT * FROM creations ORDER BY created_at DESC"))
         return rows_to_list(cursor.fetchall())
 
 
@@ -554,7 +561,7 @@ def create_creation(creation: CreationCreate):
     """Create a new creation/idea."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO creations (title, content, type) VALUES (?, ?, ?)",
+            q("INSERT INTO creations (title, content, type) VALUES (?, ?, ?)"),
             (creation.title, creation.content, creation.type),
         )
 
@@ -568,14 +575,14 @@ def create_creation(creation: CreationCreate):
         except Exception:
             pass
 
-        row = conn.execute("SELECT * FROM creations WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        row = conn.execute(q("SELECT * FROM creations WHERE id = ?"), (cursor.lastrowid,)).fetchone()
         return dict_from_row(row)
 
 
 @app.delete("/api/creations/{item_id}")
 async def delete_creation(item_id: int):
     with get_db() as conn:
-        conn.execute("DELETE FROM creations WHERE id = ?", (item_id,))
+        conn.execute(q("DELETE FROM creations WHERE id = ?"), (item_id,))
     return {"status": "success"}
 
 @app.put("/api/creations/{item_id}")
@@ -599,7 +606,7 @@ async def update_creation(item_id: int, updates: CreationUpdate):
 def list_notes():
     """List all notes."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM notes ORDER BY created_at DESC")
+        cursor = conn.execute(q("SELECT * FROM notes ORDER BY created_at DESC"))
         return rows_to_list(cursor.fetchall())
 
 
@@ -608,7 +615,7 @@ def list_goal_notes(goal_id: int):
     """List notes for a specific goal."""
     with get_db() as conn:
         cursor = conn.execute(
-            "SELECT * FROM notes WHERE goal_id = ? ORDER BY created_at DESC", (goal_id,)
+            q("SELECT * FROM notes WHERE goal_id = ? ORDER BY created_at DESC"), (goal_id,)
         )
         return rows_to_list(cursor.fetchall())
 
@@ -618,7 +625,7 @@ def create_note(note: NoteCreate):
     """Create a new note."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO notes (goal_id, title, content) VALUES (?, ?, ?)",
+            q("INSERT INTO notes (goal_id, title, content) VALUES (?, ?, ?)"),
             (note.goal_id, note.title, note.content),
         )
         
@@ -632,7 +639,7 @@ def create_note(note: NoteCreate):
         except Exception:
             pass
             
-        row = conn.execute("SELECT * FROM notes WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        row = conn.execute(q("SELECT * FROM notes WHERE id = ?"), (cursor.lastrowid,)).fetchone()
         return dict_from_row(row)
 
 
@@ -640,7 +647,7 @@ def create_note(note: NoteCreate):
 def delete_note(note_id: int):
     """Delete a note."""
     with get_db() as conn:
-        conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        conn.execute(q("DELETE FROM notes WHERE id = ?"), (note_id,))
         return {"message": "Note deleted", "id": note_id}
 
 
@@ -668,7 +675,7 @@ def chat_history(goal_id: Optional[int] = None, limit: int = 50):
 def list_notifications():
     """List all notifications."""
     with get_db() as conn:
-        cursor = conn.execute("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50")
+        cursor = conn.execute(q("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50"))
         return rows_to_list(cursor.fetchall())
 
 
@@ -676,7 +683,7 @@ def list_notifications():
 def mark_notification_read(notif_id: int):
     """Mark a notification as read."""
     with get_db() as conn:
-        conn.execute("UPDATE notifications SET is_read = 1 WHERE id = ?", (notif_id,))
+        conn.execute(q("UPDATE notifications SET is_read = 1 WHERE id = ?"), (notif_id,))
         return {"message": "Marked as read"}
 
 
@@ -694,7 +701,7 @@ def list_fitness_logs(goal_id: int, log_type: Optional[str] = None):
             query += "AND type = ? "
             params.append(log_type)
         query += "ORDER BY date DESC, created_at DESC"
-        cursor = conn.execute(query, params)
+        cursor = conn.execute(q(query), params)
         return rows_to_list(cursor.fetchall())
 
 
@@ -703,10 +710,10 @@ def create_fitness_log(log: FitnessLogCreate):
     """Create a new fitness log (workout, diet, or metric)."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO fitness_logs (goal_id, date, type, category, value) VALUES (?, ?, ?, ?, ?)",
-            (log.goal_id, log.date, log.type, log.category, log.value),
+            q("INSERT INTO fitness_logs (goal_id, date, type, category, value) VALUES (?, ?, ?, ?, ?)"),
+            (log.log_type, log.date, log.type, log.category, log.value),
         )
-        row = conn.execute("SELECT * FROM fitness_logs WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        row = conn.execute(q("SELECT * FROM fitness_logs WHERE id = ?"), (cursor.lastrowid,)).fetchone()
         return dict_from_row(row)
 
 
@@ -715,7 +722,7 @@ def list_fitness_photos(goal_id: int):
     """List progress photos for a fitness goal."""
     with get_db() as conn:
         cursor = conn.execute(
-            "SELECT * FROM progress_photos WHERE goal_id = ? ORDER BY date DESC", (goal_id,)
+            q("SELECT * FROM progress_photos WHERE goal_id = ? ORDER BY date DESC"), (goal_id,)
         )
         return rows_to_list(cursor.fetchall())
 
@@ -725,10 +732,10 @@ def create_fitness_photo(photo: FitnessPhotoCreate):
     """Log a new progress photo."""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO progress_photos (goal_id, date, image_path, caption) VALUES (?, ?, ?, ?)",
+            q("INSERT INTO progress_photos (goal_id, date, image_path, caption) VALUES (?, ?, ?, ?)"),
             (photo.goal_id, photo.date, photo.image_path, photo.caption),
         )
-        row = conn.execute("SELECT * FROM progress_photos WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        row = conn.execute(q("SELECT * FROM progress_photos WHERE id = ?"), (cursor.lastrowid,)).fetchone()
         return dict_from_row(row)
 
 

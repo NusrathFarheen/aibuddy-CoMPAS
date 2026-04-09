@@ -6,7 +6,7 @@ Automatically breaks high-level goals into actionable steps/tasks using Groq.
 import os
 import json
 from groq import Groq
-from ..database import get_db
+from ..database import get_db, q
 
 _client = None
 
@@ -82,7 +82,7 @@ def generate_plan(goal_id: int, title: str, description: str = "", template_id: 
     with get_db() as conn:
         for desc in tasks_list:
             cursor = conn.execute(
-                "INSERT INTO tasks (goal_id, user_id, description, status) VALUES (?, ?, ?, 'todo')",
+                q("INSERT INTO tasks (goal_id, user_id, description, status) VALUES (?, ?, ?, 'todo')"),
                 (goal_id, user_id, str(desc)),
             )
             created_tasks.append({

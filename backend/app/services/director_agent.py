@@ -7,7 +7,7 @@ Personality: Professional yet witty (JARVIS/FRIDAY inspired).
 import os
 from datetime import datetime, timedelta
 from groq import Groq
-from ..database import get_db, rows_to_list
+from ..database import get_db, rows_to_list, q
 
 _client = None
 
@@ -81,11 +81,14 @@ def _gather_context(user_id: int):
     with get_db() as conn:
         cursor = conn.cursor()
 
-        # Active goals for this user
-        cursor.execute(
-            "SELECT * FROM goals WHERE user_id = ? AND status = 'active' AND is_deleted = 0",
-            (user_id,)
-        )
+        # Active goals for this user - handle user_id=None for single-user resilience
+        if user_id is None:
+            cursor.execute(q("SELECT * FROM goals WHERE status = 'active' AND is_deleted = 0"))
+        else:
+            cursor.execute(
+                q("SELECT * FROM goals WHERE user_id = ? AND status = 'active' AND is_deleted = 0"),
+                (user_id,)
+            )
         goals = rows_to_list(cursor.fetchall())
 
         for g in goals:
@@ -110,10 +113,16 @@ def _gather_context(user_id: int):
 
         # Recent mood (last 7 days of journal entries)
         week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-        cursor.execute(
-            "SELECT mood_score, create_date FROM journal_entries WHERE user_id = ? AND create_date >= ? ORDER BY create_date DESC",
-            (user_id, week_ago),
-        )
+        if user_id is None:
+            cursor.execute(
+                q("SELECT mood_score, create_date FROM journal_entries WHERE create_date >= ? ORDER BY create_date DESC"),
+                (week_ago,),
+            )
+        else:
+            cursor.execute(
+                q("SELECT mood_score, create_date FROM journal_entries WHERE user_id = ? AND create_date >= ? ORDER BY create_date DESC"),
+                (user_id, week_ago),
+            )
         moods = rows_to_list(cursor.fetchall())
         context["recent_moods"] = moods
         if moods:
@@ -125,22 +134,31 @@ def _gather_context(user_id: int):
             context["avg_mood"] = None
 
         # Latest journal entry
-        cursor.execute(
-            "SELECT content, mood_score, create_date FROM journal_entries WHERE user_id = ? ORDER BY id DESC LIMIT 1",
-            (user_id,)
-        )
+        if user_id is None:
+            cursor.execute(q("SELECT content, mood_score, create_date FROM journal_entries ORDER BY id DESC LIMIT 1"))
+        else:
+            cursor.execute(
+                q("SELECT content, mood_score, create_date FROM journal_entries WHERE user_id = ? ORDER BY id DESC LIMIT 1"),
+                (user_id,)
+            )
         latest_journal = cursor.fetchone()
         context["latest_journal"] = dict(latest_journal) if latest_journal else None
 
         # Habit streaks
-        cursor.execute("SELECT title, current_streak, best_streak FROM routines WHERE user_id = ?", (user_id,))
+        if user_id is None:
+            cursor.execute(q("SELECT title, current_streak, best_streak FROM routines"))
+        else:
+            cursor.execute(q("SELECT title, current_streak, best_streak FROM routines WHERE user_id = ?"), (user_id,))
         context["habits"] = rows_to_list(cursor.fetchall())
 
         # Pending tasks count
-        cursor.execute(
-            "SELECT COUNT(*) as count FROM tasks WHERE user_id = ? AND is_completed = 0",
-            (user_id,)
-        )
+        if user_id is None:
+            cursor.execute(q("SELECT COUNT(*) as count FROM tasks WHERE is_completed = 0"))
+        else:
+            cursor.execute(
+                q("SELECT COUNT(*) as count FROM tasks WHERE user_id = ? AND is_completed = 0"),
+                (user_id,)
+            )
         context["pending_tasks"] = cursor.fetchone()["count"]
 
     return context
@@ -192,7 +210,7 @@ def _save_notification(title, message):
     try:
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO notifications (title, message, type) VALUES (?, ?, 'briefing')",
+                q("INSERT INTO notifications (title, message, type) VALUES (?, ?, 'briefing')"),
                 (title, message),
             )
     except Exception:
