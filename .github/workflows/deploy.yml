@@ -28,8 +28,8 @@ jobs:
       - name: Build Web
         run: |
           cd mobile_app
-          # Removed --web-renderer auto as it was causing the crash
-          flutter build web --release --base-href "/aibuddy-CoMPAS/"
+          # Injected the Render backend URL so the app knows where to connect
+          flutter build web --release --base-href "/aibuddy-CoMPAS/" --dart-define=BACKEND_URL=https://aibuddy-backend-h0cl.onrender.com
           
       - name: Deploy to GH Pages
         uses: peaceiris/actions-gh-pages@v3
