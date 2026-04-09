@@ -427,26 +427,28 @@ def _update_goal_progress(conn, goal_id):
 def list_routines():
     """List all routines, grouped by category, with daily reset check."""
     today = date.today().isoformat()
-    with get_db() as conn:
-        # 1. Perform daily reset check
-        # If any routine is marked as completed but its last_completed_date is NOT today,
-        # it means a new day has started, and we should reset 'is_completed' for ALL routines.
-        # This acts as our "cron jobs substitute" on every fetch.
-        stale_check = conn.execute(
-            q("SELECT count(*) FROM routines WHERE is_completed = 1 AND last_completed_date != ?"), (today,)
-        ).fetchone()[0]
-        
-        if stale_check > 0:
-            conn.execute(q("UPDATE routines SET is_completed = 0"))
-            # Update last_completed_date to NULL for routines that haven't been completed today?
-            # No, keep it so we know if the streak was broken tomorrow.
-
-        cursor = conn.execute(q("SELECT * FROM routines ORDER BY category, id"))
-        routines = rows_to_list(cursor.fetchall())
-        # Add badge info
-        for r in routines:
-            r["badge"] = _get_badge(r["current_streak"] or 0)
-        return routines
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                q("SELECT count(*) as total FROM routines WHERE is_completed = TRUE AND last_completed_date != ?"), (today,)
+            ).fetchone()
+            
+            stale_check = dict_from_row(row).get('total', 0) if row else 0
+            
+            if stale_check > 0:
+                conn.execute(q("UPDATE routines SET is_completed = FALSE"))
+    
+            cursor = conn.execute(q("SELECT * FROM routines ORDER BY category, id"))
+            routines = rows_to_list(cursor.fetchall())
+            for r in routines:
+                r["badge"] = "Beginner"
+                if r["best_streak"] and r["best_streak"] >= 7: r["badge"] = "Consistent"
+                if r["best_streak"] and r["best_streak"] >= 21: r["badge"] = "Habit Master"
+                if r["best_streak"] and r["best_streak"] >= 50: r["badge"] = "Unstoppable"
+            return routines
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.post("/api/routines")
