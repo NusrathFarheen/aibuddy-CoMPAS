@@ -243,12 +243,23 @@ def init_db():
     print(f"✅ Database initialized ({'Postgres' if is_postgres() else 'SQLite'})")
 
 
+import re
 def q(query):
     """Normalizes query placeholders for SQLite (?) vs Postgres (%s) and injects RETURNING id."""
     if is_postgres():
         replaced = query.replace("?", "%s")
         if replaced.strip().upper().startswith("INSERT INTO") and " RETURNING id" not in replaced:
             replaced += " RETURNING id"
+            
+        # Fix SQLite literal integers to Postgres BOOLEAN
+        replaced = re.sub(r'is_deleted\s*=\s*0', 'is_deleted = FALSE', replaced)
+        replaced = re.sub(r'is_deleted\s*=\s*1', 'is_deleted = TRUE', replaced)
+        replaced = re.sub(r'is_completed\s*=\s*0', 'is_completed = FALSE', replaced)
+        replaced = re.sub(r'is_completed\s*=\s*1', 'is_completed = TRUE', replaced)
+        replaced = re.sub(r'is_pinned\s*=\s*0', 'is_pinned = FALSE', replaced)
+        replaced = re.sub(r'is_pinned\s*=\s*1', 'is_pinned = TRUE', replaced)
+        replaced = re.sub(r'is_archived\s*=\s*0', 'is_archived = FALSE', replaced)
+        replaced = re.sub(r'is_archived\s*=\s*1', 'is_archived = TRUE', replaced)
         return replaced
     return query
 

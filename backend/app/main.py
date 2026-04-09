@@ -217,7 +217,7 @@ def list_goals():
     """List all active (non-deleted) goals."""
     with get_db() as conn:
         cursor = conn.execute(
-            q("SELECT * FROM goals WHERE is_deleted = 0 ORDER BY is_pinned DESC, id DESC")
+            q("SELECT * FROM goals WHERE is_deleted = FALSE ORDER BY is_pinned DESC, id DESC")
         )
         return rows_to_list(cursor.fetchall())
 
@@ -302,7 +302,7 @@ def create_goal(goal: GoalCreate):
 def get_goal(goal_id: int):
     """Get a single goal by ID."""
     with get_db() as conn:
-        row = conn.execute(q("SELECT * FROM goals WHERE id = ? AND is_deleted = 0"), (goal_id,)).fetchone()
+        row = conn.execute(q("SELECT * FROM goals WHERE id = ? AND is_deleted = FALSE"), (goal_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Goal not found")
         return dict_from_row(row)
@@ -484,7 +484,7 @@ def toggle_routine(routine_id: int):
 
         conn.execute(
             q("UPDATE routines SET is_completed = ?, last_completed_date = ?, current_streak = ?, best_streak = ? WHERE id = ?"),
-            (new_status, today, current_streak, best_streak, routine_id),
+            (bool(new_status), today, current_streak, best_streak, routine_id),
         )
 
         # Store in wellness memory (only on completion)
