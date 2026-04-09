@@ -38,8 +38,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 
@@ -58,8 +60,10 @@ async def startup():
         print(f"⚠️ Memory init warning (non-critical): {e}")
     print("🚀 CoM-PAS is ONLINE.\n")
 
-# Serve the uploads directory
-app.mount("/uploads", StaticFiles(directory=os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")), name="uploads")
+# Serve the uploads directory (only if it exists)
+_uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+if os.path.isdir(_uploads_dir):
+    app.mount("/uploads", StaticFiles(directory=_uploads_dir), name="uploads")
 
 @app.get("/")
 async def root():
@@ -68,6 +72,25 @@ async def root():
         "message": "AIBuddy (CoM-PAS) Backend is running.",
         "version": "2.0.0"
     }
+
+@app.options("/{full_path:path}")
+async def preflight_handler(full_path: str):
+    """Explicit CORS preflight handler — returns 200 for all OPTIONS requests."""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
+
+@app.get("/health")
+async def health_check():
+    """Keep-alive endpoint — ping this to prevent Render free-tier sleep."""
+    return {"status": "alive", "timestamp": datetime.utcnow().isoformat()}
 
 
 # ============================================================================

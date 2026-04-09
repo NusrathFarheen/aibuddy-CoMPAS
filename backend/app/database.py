@@ -23,12 +23,62 @@ def get_db_url():
         return DB_URL.replace("postgres://", "postgresql://", 1)
     return DB_URL
 
+class CursorWrapper:
+    def __init__(self, cursor, is_insert):
+        self.cursor = cursor
+        self._lastrowid = None
+        if is_insert:
+            try:
+                row = self.cursor.fetchone()
+                if row and 'id' in row:
+                    self._lastrowid = row['id']
+            except Exception:
+                pass
+
+    def fetchone(self):
+        return self.cursor.fetchone()
+
+    def fetchall(self):
+        return self.cursor.fetchall()
+
+    def __iter__(self):
+        return iter(self.cursor)
+
+    @property
+    def lastrowid(self):
+        return self._lastrowid
+
+class PostgresConnectionWrapper:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(cursor_factory=RealDictCursor)
+
+    def execute(self, query, params=None):
+        cursor = self._conn.cursor(cursor_factory=RealDictCursor)
+        if params is None:
+            cursor.execute(query)
+        else:
+            cursor.execute(query, params)
+        is_insert = query.strip().upper().startswith("INSERT INTO")
+        return CursorWrapper(cursor, is_insert)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
 @contextmanager
 def get_db():
     """Context manager for database connections (SQLite or Postgres)."""
     if is_postgres():
-        conn = psycopg2.connect(get_db_url())
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        raw_conn = psycopg2.connect(get_db_url())
+        conn = PostgresConnectionWrapper(raw_conn)
         try:
             yield conn
             conn.commit()
@@ -194,9 +244,12 @@ def init_db():
 
 
 def q(query):
-    """Normalizes query placeholders for SQLite (?) vs Postgres (%s)."""
+    """Normalizes query placeholders for SQLite (?) vs Postgres (%s) and injects RETURNING id."""
     if is_postgres():
-        return query.replace("?", "%s")
+        replaced = query.replace("?", "%s")
+        if replaced.strip().upper().startswith("INSERT INTO") and " RETURNING id" not in replaced:
+            replaced += " RETURNING id"
+        return replaced
     return query
 
 
