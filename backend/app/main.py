@@ -44,6 +44,20 @@ app.add_middleware(
     max_age=3600,
 )
 
+import traceback
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    print(f"🔥 UNHANDLED EXCEPTION: {exc}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "traceback": traceback.format_exc()},
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
+
+
 
 @app.on_event("startup")
 async def startup():
