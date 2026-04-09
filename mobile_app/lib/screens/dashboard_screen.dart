@@ -187,31 +187,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 16),
                 
-                // Goals Grid (3 Columns)
                 Expanded(
                   child: provider.goals.isEmpty 
                     ? const Center(child: Text("No active goals found.", style: TextStyle(color: Colors.white24)))
-                    : GridView.builder(
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 20,
-                          mainAxisSpacing: 20,
-                          childAspectRatio: 0.88,
-                        ),
-                        itemCount: provider.goals.length,
-                        itemBuilder: (context, index) {
-                          final goal = provider.goals[index];
-                          return GoalWaveCard(
-                            goal: goal,
-                            index: index,
-                            onTap: () {
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => WorkspaceScreen(goal: goal)));
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          int crossAxisCount = 3;
+                          if (constraints.maxWidth < 600) {
+                            crossAxisCount = 1;
+                          } else if (constraints.maxWidth < 900) {
+                            crossAxisCount = 2;
+                          }
+                          return GridView.builder(
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              crossAxisSpacing: 20,
+                              mainAxisSpacing: 20,
+                              childAspectRatio: crossAxisCount == 1 ? 1.5 : 0.88,
+                            ),
+                            itemCount: provider.goals.length,
+                            itemBuilder: (context, index) {
+                              final goal = provider.goals[index];
+                              return GoalWaveCard(
+                                goal: goal,
+                                index: index,
+                                onTap: () {
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => WorkspaceScreen(goal: goal)));
+                                },
+                                onEdit: (goal) => _showGoalModal(context, goal: goal),
+                                onDelete: (id) => _showDeleteConfirm(context, id),
+                                onArchive: (id) => context.read<AppProvider>().archiveGoal(id),
+                              );
                             },
-                            onEdit: (goal) => _showGoalModal(context, goal: goal),
-                            onDelete: (id) => _showDeleteConfirm(context, id),
-                            onArchive: (id) => context.read<AppProvider>().archiveGoal(id),
                           );
-                        },
+                        }
                       ),
                 ),
               ],
