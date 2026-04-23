@@ -6,6 +6,7 @@ Personality: Professional yet witty (JARVIS/FRIDAY inspired).
 
 import os
 from datetime import datetime, timedelta
+import google.generativeai as genai
 from groq import Groq
 from ..database import get_db, rows_to_list, q
 
@@ -42,17 +43,29 @@ def get_briefing(user_id: int, api_key: str = None):
     prompt = _build_prompt(context)
 
     try:
-        client = Groq(api_key=api_key) if api_key else _get_client()
-        response = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": DIRECTOR_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.7,
-            max_tokens=500,
-        )
-        briefing_text = response.choices[0].message.content
+        google_key = os.getenv("GOOGLE_API_KEY")
+        if google_key:
+            # Use Gemini
+            genai.configure(api_key=google_key)
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                system_instruction=DIRECTOR_SYSTEM_PROMPT
+            )
+            response = model.generate_content(prompt)
+            briefing_text = response.text
+        else:
+            # Fallback to Groq
+            client = Groq(api_key=api_key) if api_key else _get_client()
+            response = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": DIRECTOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.7,
+                max_tokens=500,
+            )
+            briefing_text = response.choices[0].message.content
 
         # Save as notification
         _save_notification("Director's Briefing", briefing_text)

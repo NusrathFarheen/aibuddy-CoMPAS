@@ -5,6 +5,7 @@ Automatically breaks high-level goals into actionable steps/tasks using Groq.
 
 import os
 import json
+import google.generativeai as genai
 from groq import Groq
 from ..database import get_db, q
 
@@ -43,19 +44,29 @@ def generate_plan(goal_id: int, title: str, description: str = "", template_id: 
     prompt += "\n\nBreak this into 5-8 actionable steps suitable for this context."
 
     try:
-        client = Groq(api_key=api_key) if api_key else _get_client()
-             
-        response = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            model="llama-3.3-70b-versatile", # Updated model name
-            temperature=0.6,
-            max_tokens=500,
-        )
-
-        raw = response.choices[0].message.content.strip()
+        google_key = os.getenv("GOOGLE_API_KEY")
+        if google_key:
+            # Use Gemini
+            genai.configure(api_key=google_key)
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                system_instruction=PLANNER_SYSTEM_PROMPT
+            )
+            response = model.generate_content(prompt)
+            raw = response.text.strip()
+        else:
+            # Fallback to Groq
+            client = Groq(api_key=api_key) if api_key else _get_client()
+            response = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.6,
+                max_tokens=500,
+            )
+            raw = response.choices[0].message.content.strip()
 
         # Parse the JSON array — handle potential markdown wrapping
         if raw.startswith("```"):

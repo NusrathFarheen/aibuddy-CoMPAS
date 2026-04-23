@@ -4,6 +4,7 @@ Supports context-aware conversations with memory retrieval.
 """
 
 import os
+import google.generativeai as genai
 from groq import Groq
 from ..database import get_db, q
 from .memory import search_memory, store_memory
@@ -82,16 +83,38 @@ def chat(message: str, goal_id: int = None, system_instruction: str = None, api_
 
     messages.append({"role": "user", "content": message})
 
-    # 5. Call Groq
+    # 5. Call LLM (Gemini preferred, fallback to Groq)
     try:
-        client = _get_client(api_key=api_key)
-        response = client.chat.completions.create(
-            messages=messages,
-            model="llama-3.3-70b-versatile",
-            temperature=0.7,
-            max_tokens=800,
-        )
-        reply = response.choices[0].message.content
+        google_key = os.getenv("GOOGLE_API_KEY")
+        if google_key:
+            # Use Gemini
+            genai.configure(api_key=google_key)
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                system_instruction=base_prompt + context_block
+            )
+            
+            # Format history for Gemini
+            gemini_history = []
+            for h in history:
+                gemini_history.append({
+                    "role": "user" if h["role"] == "user" else "model",
+                    "parts": [h["content"]]
+                })
+            
+            chat_session = model.start_chat(history=gemini_history)
+            response = chat_session.send_message(message)
+            reply = response.text
+        else:
+            # Fallback to Groq
+            client = _get_client(api_key=api_key)
+            response = client.chat.completions.create(
+                messages=messages,
+                model="llama-3.3-70b-versatile",
+                temperature=0.7,
+                max_tokens=800,
+            )
+            reply = response.choices[0].message.content
     except Exception as e:
         reply = f"I'm having trouble connecting right now. Error: {str(e)}"
 
