@@ -456,7 +456,7 @@ class _MetricTrackerState extends State<MetricTracker> {
   Widget build(BuildContext context) {
     if (_isLoading) return const Center(child: CircularProgressIndicator(color: Colors.greenAccent));
 
-    final completedToday = _tasks.where((t) => t['is_completed'] == 1).length;
+    final completedToday = _tasks.where((t) => t['is_completed'] == 1 || t['is_completed'] == true).length;
     final totalTasks = _tasks.length;
     final progressStr = totalTasks > 0 ? "$completedToday / $totalTasks" : "No Plan";
     
@@ -482,7 +482,7 @@ class _MetricTrackerState extends State<MetricTracker> {
           if (_tasks.isEmpty)
              const Text("No tasks scheduled.", style: TextStyle(color: Colors.white24, fontSize: 12))
           else
-            ..._tasks.map((t) => _buildWorkoutItem(t['description'] ?? '', t['status'] ?? 'Active', t['is_completed'] == 1, t['id'])),
+            ..._tasks.map((t) => _buildWorkoutItem(t['description'] ?? '', t['status'] ?? 'Active', t['is_completed'] == 1 || t['is_completed'] == true, t['id'])),
           
           const SizedBox(height: 24),
 

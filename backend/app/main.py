@@ -752,7 +752,7 @@ def create_fitness_log(log: FitnessLogCreate):
     with get_db() as conn:
         cursor = conn.execute(
             q("INSERT INTO fitness_logs (goal_id, date, type, category, value) VALUES (?, ?, ?, ?, ?)"),
-            (log.log_type, log.date, log.type, log.category, log.value),
+            (log.goal_id, log.date, log.type, log.category, log.value),
         )
         row = conn.execute(q("SELECT * FROM fitness_logs WHERE id = ?"), (cursor.lastrowid,)).fetchone()
         return dict_from_row(row)

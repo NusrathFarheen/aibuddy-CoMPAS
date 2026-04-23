@@ -21,7 +21,7 @@ if __name__ == "__main__":
     print("  Cognitive Management & Proactive Assistance")
     print("=" * 50)
     
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 8000))
     debug = os.environ.get("DEBUG", "false").lower() == "true"
     
     uvicorn.run(
